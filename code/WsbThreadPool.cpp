@@ -2,6 +2,7 @@
 
 #include "WsbThreadPoolReal.h"
 #include "process.h"
+#include "iostream"
 
 namespace wsb
 {
@@ -287,8 +288,9 @@ namespace wsb
 	//********参数：无
 	//********返回值：返回活动线程链表的size
 	//************************************************************
-	size_t CIdleThreadStack::GetSize() const
+	size_t CIdleThreadStack::GetSize()
 	{
+		CLock lock(m_mutex);
 		return m_ThreadStack.size();
 	}
 
@@ -297,8 +299,9 @@ namespace wsb
 	//********参数：无
 	//********返回值：true or false
 	//************************************************************
-	bool CIdleThreadStack::isEmpty() const
+	bool CIdleThreadStack::isEmpty()
 	{
+		CLock lock(m_mutex);
 		return m_ThreadStack.empty();
 	}
 
@@ -371,8 +374,9 @@ namespace wsb
 	//********参数：无
 	//********返回值：返回活动线程链表的size
 	//************************************************************
-	size_t CActiveThreadList::GetSize() const
+	size_t CActiveThreadList::GetSize()
 	{
+		CLock lock(m_mutex);
 		return m_ActiveThread.size();
 	}
 
@@ -381,8 +385,9 @@ namespace wsb
 	//********参数：无
 	//********返回值：true or false
 	//************************************************************
-	bool CActiveThreadList::isEmpty() const
+	bool CActiveThreadList::isEmpty()
 	{
+		CLock lock(m_mutex);
 		return m_ActiveThread.empty();
 	}
 
@@ -448,8 +453,9 @@ namespace wsb
 	//********参数：无
 	//********返回值：返回工作队列的size
 	//************************************************************
-	size_t CJobQueue::GetSize() const
+	size_t CJobQueue::GetSize()
 	{
+		CLock mLock(m_mutex);
 		return m_JobQueue.size();
 	}
 
@@ -458,8 +464,9 @@ namespace wsb
 	//********参数：无
 	//********返回值：true or false
 	//************************************************************
-	bool CJobQueue::isEmpty() const
+	bool CJobQueue::isEmpty()
 	{
+		CLock mLock(m_mutex);
 		return m_JobQueue.empty();
 	}
 
@@ -500,7 +507,9 @@ namespace wsb
 	{
 		CLock mLock(m_mutex);
 		while (!m_JobQueue.empty())
+		{
 			m_JobQueue.pop();
+		}
 	}
 	//工作队列类部分结束
 	
@@ -607,30 +616,41 @@ namespace wsb
 	//********返回值：无
 	//************************************************************
 	void CRealThreadPool::SwitchActiveThread(CRealThread* pThread)
-	{
-		if (m_NormalJob.isEmpty()&&m_HighJob.isEmpty())//若高优先级与普通优先级队列都没有工作对象，则将该线程从活动线程链表转移到空闲线程栈中，否则就分配工作给该线程
+	{	
+		//if (m_NormalJob.isEmpty()&&m_HighJob.isEmpty())//若高优先级与普通优先级队列都没有工作对象，则将该线程从活动线程链表转移到空闲线程栈中，否则就分配工作给该线程
+		//{
+		//	m_ActiveThread.removeThread(pThread);//从活动链表中移除
+		//	m_IdleThread.push(pThread);//压入空闲线程栈
+		//}
+		//else
+		//{
+		//	shared_ptr<CJob> job = NULL;
+		//	//取工作
+		//	if (!m_HighJob.isEmpty())
+		//	{
+		//		job = m_HighJob.popJop();
+		//	}
+		//	else
+		//	{
+		//		job = m_NormalJob.popJop();
+		//	}
+		//	//分配工作
+		//	if (job != NULL)
+		//	{
+		//		pThread->AssignJob(job);
+		//		pThread->notifyStartJob();
+		//	}
+		//}
+		shared_ptr<CJob> job = GetJob();
+		if (job != NULL)
 		{
-			m_ActiveThread.removeThread(pThread);//从活动链表中移除
-			m_IdleThread.push(pThread);//压入空闲线程栈
+			pThread->AssignJob(job);
+			pThread->notifyStartJob();
 		}
 		else
 		{
-			shared_ptr<CJob> job = NULL;
-			//取工作
-			if (!m_HighJob.isEmpty())
-			{
-				job = m_HighJob.popJop();
-			}
-			else
-			{
-				job = m_NormalJob.popJop();
-			}
-			//分配工作
-			if (job != NULL)
-			{
-				pThread->AssignJob(job);
-				pThread->notifyStartJob();
-			}
+			m_ActiveThread.removeThread(pThread);//从活动链表中移除
+			m_IdleThread.push(pThread);//压入空闲线程栈
 		}
 	}
 
@@ -641,30 +661,46 @@ namespace wsb
 	//********返回值：无
 	//************************************************************
 	bool CRealThreadPool::SubmitJob(shared_ptr<CJob>& job)//提交一个工作
-	{
-		if (m_IdleThread.isEmpty())//空闲线程栈为空
+	{	
+		if (job == NULL)return false;
+		if (m_IdleThread.isEmpty()&&(m_ThreadNum<m_maxThreadNum))
 		{
-			if (m_ThreadNum >= m_maxThreadNum)//当前线程数大于等于最大线程数，将工作压入工作队列
-			{
-				if (job->GetJobPri() == ThreadPriority::Normal)
-					m_NormalJob.pushJob(job);//压入普通工作队列
-				else
-					m_HighJob.pushJob(job);//压入高优先级工作队列
-				return true;
-			}
-			else
-			{
-				IncreaseCapacity();//扩容
-			}
+			IncreaseCapacity();
 		}
-		CRealThread* pThread=m_IdleThread.pop();//从空闲栈取出
-		if (pThread == NULL)return false;
 
-		m_ActiveThread.addThread(pThread);//放入活动链表
-		pThread->AssignJob(job);//分配任务
-		pThread->notifyStartJob();//开始做任务
-
+		CRealThread* pThread = m_IdleThread.pop();//从空闲栈取出
+		if (pThread != NULL)
+		{
+			m_ActiveThread.addThread(pThread);//放入活动链表
+			pThread->AssignJob(job);
+			pThread->notifyStartJob();
+		}
+		else
+		{
+			if (job->GetJobPri() == ThreadPriority::Normal)
+				m_NormalJob.pushJob(job);//压入普通工作队列
+			else
+				m_HighJob.pushJob(job);//压入高优先级工作队列
+		}
 		return true;
+	}
+
+	//************************************************************
+	//********功能：获得一个Job
+	//********做法：
+	//********参数：无
+	//********返回值：Job对象
+	//************************************************************
+	shared_ptr<CJob> CRealThreadPool::GetJob()//获得一个Job
+	{
+		shared_ptr<CJob> job = NULL;
+		//取工作
+		job = m_HighJob.popJop();
+		if (job==NULL)
+		{
+			job = m_NormalJob.popJop();
+		}
+		return job;
 	}
 
 	//************************************************************
@@ -692,12 +728,14 @@ namespace wsb
 	//************************************************************
 	void CRealThreadPool::IncreaseCapacity()
 	{
+		CLock lock(m_mutex);
 		size_t nums = min(m_maxThreadNum, 2 * m_ThreadNum);
 		while (m_ThreadNum < nums)
 		{
 			m_IdleThread.push(new CRealThread(this));
 			m_ThreadNum++;
 		}
+		return;
 	}
 
 	//************************************************************
@@ -708,6 +746,7 @@ namespace wsb
 	//************************************************************
 	void CRealThreadPool::DecreaseCapacity()
 	{
+		CLock lock(m_mutex);
 		size_t nums = m_IdleThread.GetSize() / 2;
 		while (m_IdleThread.GetSize()>1&&m_ThreadNum>m_minThreadNum&&nums > 0)
 		{

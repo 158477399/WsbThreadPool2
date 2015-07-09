@@ -89,8 +89,8 @@ namespace wsb
 	public:
 		CIdleThreadStack();
 		~CIdleThreadStack();
-		size_t GetSize() const;//获取大小
-		bool isEmpty() const;//是否为空
+		size_t GetSize();//获取大小
+		bool isEmpty();//是否为空
 		void push(CRealThread* thread);//压入线程
 		CRealThread* pop();//弹出线程
 		void clear();//清空
@@ -105,8 +105,8 @@ namespace wsb
 	public:
 		CActiveThreadList();
 		~CActiveThreadList();
-		size_t GetSize() const;//获取大小
-		bool isEmpty() const;//是否为空
+		size_t GetSize();//获取大小
+		bool isEmpty();//是否为空
 		void addThread(CRealThread* thread);//添加线程
 		void removeThread(CRealThread* thread);//移除线程
 		void clear();//清空
@@ -121,8 +121,8 @@ namespace wsb
 	public:
 		CJobQueue();
 		~CJobQueue();
-		size_t GetSize() const;//获取大小
-		bool isEmpty() const;//是否为空
+		size_t GetSize();//获取大小
+		bool isEmpty();//是否为空
 		void pushJob(shared_ptr<CJob>& job);//压入Job
 		shared_ptr<CJob> popJop();//弹出Job
 		void clear();//清空
@@ -145,6 +145,7 @@ namespace wsb
 		CRealThreadPool& operator=(const CRealThreadPool&);
 		void IncreaseCapacity();//增加线程数,增加为当前线程数的两倍或最大线程数
 		void DecreaseCapacity();//减少空闲线程数
+		shared_ptr<CJob> GetJob();//获得一个Job
 		static unsigned int WINAPI CheckIdleThread(PVOID pParam);//检测空闲线程数是否发生较大变化，若是，则不对空闲线程进行减容处理
 	private:
 		CActiveThreadList m_ActiveThread;//活动线程队列
@@ -155,5 +156,6 @@ namespace wsb
 		const size_t m_maxThreadNum;//最多的线程数
 		size_t m_ThreadNum;//实际的线程数量
 		HANDLE m_hQuitEvent;//空闲线程数侦测线程退出信号
+		CMutex m_mutex;//互斥量
 	};
 }
