@@ -37,6 +37,7 @@ namespace wsb
 	public:
 		CRealThread(CWsbThreadPool* pool);
 		~CRealThread();
+		bool InitThread();//初始化线程，即创建具体的线程
 		bool suspendThread();//挂起线程
 		bool resumeThread();//恢复线程
 		bool AssignJob(shared_ptr<CJob>& job);//分配作业

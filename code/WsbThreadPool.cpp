@@ -102,10 +102,7 @@ namespace wsb
 		m_Job(NULL),
 		m_ThreadPoool(pool)
 	{
-		m_hWaitEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
-		m_hQuitEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
-
-		m_hThread = (HANDLE)_beginthreadex(NULL, 0, threadFun, this,0, &m_ThreadID);//创建一个线程
+	
 	}
 
 	//************************************************************
@@ -115,7 +112,7 @@ namespace wsb
 	//************************************************************
 	CRealThread::~CRealThread()
 	{
-		if (!m_bisExit&&m_hThread)
+		if (!m_bisExit&&m_hThread&&m_ThreadID)
 		{
 			m_bisExit = true;
 			notifyStartJob();
@@ -132,6 +129,21 @@ namespace wsb
 		{
 			CloseHandle(m_hQuitEvent);
 		}
+	}
+
+	//************************************************************
+	//********功能：初始化线程，即创建具体的线程
+	//********参数：
+	//********返回值：成功或失败
+	//************************************************************
+	bool CRealThread::InitThread()
+	{
+		m_hWaitEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+		m_hQuitEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+
+		m_hThread = (HANDLE)_beginthreadex(NULL, 0, threadFun, this, 0, &m_ThreadID);//创建一个线程
+
+		return m_ThreadID != 0;
 	}
 
 	//************************************************************
@@ -534,11 +546,16 @@ namespace wsb
 	//********参数：线程池内线程数量的最小值与最大值
 	//********返回值：
 	//************************************************************
-	CRealThreadPool::CRealThreadPool(size_t minNum, size_t maxNum) :m_minThreadNum(minNum), m_maxThreadNum(maxNum), m_ThreadNum((minNum + maxNum) / 2), m_hQuitEvent(NULL)
+	CRealThreadPool::CRealThreadPool(size_t minNum, size_t maxNum) :m_minThreadNum(minNum), m_maxThreadNum(maxNum), m_ThreadNum(0), m_hQuitEvent(NULL)
 	{
-		for (size_t i = 0; i < m_ThreadNum; i++)//创建最大值与最小值均值个的线程
+		for (size_t i = 0; i < ((minNum + maxNum) / 2); i++)//创建最大值与最小值均值个的线程
 		{
-			m_IdleThread.push(new CRealThread(this));
+			CRealThread* p = new CRealThread(this);
+			if (p->InitThread())
+			{
+				m_IdleThread.push(p);
+				m_ThreadNum++;
+			}
 		}
 		m_hQuitEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
 		HANDLE hThread = (HANDLE)_beginthreadex(NULL, 0, CheckIdleThread, this, 0, NULL);//创建空闲线程栈检测线程，每隔15s检测一次
@@ -663,6 +680,13 @@ namespace wsb
 	bool CRealThreadPool::SubmitJob(shared_ptr<CJob>& job)//提交一个工作
 	{	
 		if (job == NULL)return false;
+
+		//CLock lock(m_mutex);
+		//if (job->GetJobPri() == ThreadPriority::Normal)
+		//	m_NormalJob.pushJob(job);//压入普通工作队列
+		//else
+		//	m_HighJob.pushJob(job);//压入高优先级工作队列
+
 		if (m_IdleThread.isEmpty()&&(m_ThreadNum<m_maxThreadNum))
 		{
 			IncreaseCapacity();
@@ -732,10 +756,17 @@ namespace wsb
 		size_t nums = min(m_maxThreadNum, 2 * m_ThreadNum);
 		while (m_ThreadNum < nums)
 		{
-			m_IdleThread.push(new CRealThread(this));
-			m_ThreadNum++;
+			CRealThread* p = new CRealThread(this);
+			if (p->InitThread())
+			{
+				m_IdleThread.push(p);
+				m_ThreadNum++;
+			}
+			else
+			{
+				break;
+			}
 		}
-		return;
 	}
 
 	//************************************************************
